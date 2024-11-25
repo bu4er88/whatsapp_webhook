@@ -1,131 +1,68 @@
-/**
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+const express=require('express');
+const body_parser=require('body-parser');
+const axios=require('axios');
+require('dotenv').config();
 
-import express from "express";
-import axios from "axios";
-import body_parser from "body-parser";
+const app=express().use(body_parser.json());
 
-import dotenv from "dotenv";
-dotenv.config();
+const token = process.env.TOKEN;
+const mytoken = process.env.MYTOKEN
 
-// const express = require("express");
-// const axios = require("axios");
-// const body_parser = require("body-parser");
-// import dotenv from "dotenv";
-// dotenv.config();
 
-const app = express();
-app.use(express.json());
-
-const { WEBHOOK_VERIFY_TOKEN, GRAPH_API_TOKEN, PORT } = process.env;
-
-async function flowise(data) {
-  try {
-    const response = axios.post(
-      "http://flowise.docstalks.com:3000/api/v1/prediction/ba291a52-67f8-4537-9d3c-21863c6edeb6",
-      data,
-      {
-        headers: {
-          Authorization: "Bearer RDWvJvi8aSdvECPzyTgxvfUdD5_gY4sdzesPc7AQzak",
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    return response;
-  } catch (error) {
-    console.error("Error querying the prediction API:", error);
-    throw error;
-  }
+app.listen(8000||process.env.PORT), ()=>{
+    console.log('Server is running on port 8000');
 }
 
-app.post("/webhook", async (req, res) => {
-  // log incoming messages
-  // console.log("Incoming webhook message:", JSON.stringify(req.body, null, 2));
+app.get('/', (req, res)=>{
+    let mode = req.query["hub.mode"];
+    let challenge = req.query["hub.challenge"];
+    let token = req.query["hub.verify_token"];
 
-  // check if the webhook request contains a message
-  // details on WhatsApp text message payload: https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/payload-examples#text-messages
-  const message = req.body.entry?.[0]?.changes[0]?.value?.messages?.[0];
-
-  // check if the incoming message contains text
-  if (message?.type === "text") {
-    // extract the business number to send the reply from it
-    const business_phone_number_id =
-      req.body.entry?.[0].changes?.[0].value?.metadata?.phone_number_id;
-
-    // send a reply message as per the docs here https://developers.facebook.com/docs/whatsapp/cloud-api/reference/messages
-
-    console.log("--->>>> message:", message.text.body);
-    console.log("sender id: ", message);
-    const answer = await flowise({
-      question: message.text.body,
-      overrideConfig: {
-        sessionId: message.sender,
-      },
-    });
-    console.log(answer.data.text);
-    console.log("--->>>> Finishing!");
-
-    await axios({
-      method: "POST",
-      url: `https://graph.facebook.com/v18.0/${business_phone_number_id}/messages`,
-      headers: {
-        Authorization: `Bearer ${GRAPH_API_TOKEN}`,
-      },
-      data: {
-        messaging_product: "whatsapp",
-        to: message.from,
-        text: { body: answer.data.text },
-        // context: {
-        //   message_id: message.id, // shows the message as a reply to the original user message
-        // },
-      },
-    });
-
-    // mark incoming message as read
-    await axios({
-      method: "POST",
-      url: `https://graph.facebook.com/v18.0/${business_phone_number_id}/messages`,
-      headers: {
-        Authorization: `Bearer ${GRAPH_API_TOKEN}`,
-      },
-      data: {
-        messaging_product: "whatsapp",
-        status: "read",
-        message_id: message.id,
-      },
-    });
-  }
-
-  res.sendStatus(200);
+    if (mode && token) {
+        if (mode === 'subscribe' && token === mytoken) {
+            console.log('WEBHOOK_VERIFIED');
+            res.status(200).send(challenge);
+        } else {
+            res.status(403);
+        }
+    }
 });
 
-// accepts GET requests at the /webhook endpoint. You need this URL to setup webhook initially.
-// info on verification request payload: https://developers.facebook.com/docs/graph-api/webhooks/getting-started#verification-requests
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
+app.post('/webhook', (req, res)=>{
+    let body_param = req.body;
 
-  // check the mode and token sent are correct
-  if (mode === "subscribe" && token === WEBHOOK_VERIFY_TOKEN) {
-    // respond with 200 OK and challenge token from the request
-    res.status(200).send(challenge);
-    console.log("Webhook verified successfully!");
-  } else {
-    // respond with '403 Forbidden' if verify tokens do not match
-    res.sendStatus(403);
-  }
-});
+    console.log(JSON.stringify(body_param, null, 2));
 
-app.get("/", (req, res) => {
-  res.send(`<pre>Nothing to see here.
-Checkout README.md to start.</pre>`);
-});
+    if (body_param.object) {
+        if (body_param.entry &&
+            body_param.entry[0].changes &&
+            body_param.entry[0].changes[0].value.message &&
+            body_param.entry[0].changes[0].value.message[0]
+        ) {
+            let phone_no_id = body_param.entry[0].changes[0].value.metadata.phone_number_id;
+            let from = body_param.entry[0].changes[0].value.message[0].from;
+            let msg_body = body_param.entry[0].changes[0].value.message[0].text.body;
+        }
 
-app.listen(PORT, () => {
-  console.log(`Server is listening on port: ${PORT}`);
+        axios({
+            method: "POST",
+            url: "https://graph.facebook.com/v21.0/" + phone_no_id + "/messages?access_token=" + token,
+            data: {
+                messaging_product: "whatsapp",
+                to: from,
+                text: {
+                    body: "-----> Hi I am a bot! <-----"
+                },
+                headers: {
+                    "Content-Type": "application/json"
+                }
+            }
+        });
+        
+        res.sendStatus(200);
+    
+    } else {
+        res.sendStatus(404);
+    }
+    
 });
