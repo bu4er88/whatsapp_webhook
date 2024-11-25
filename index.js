@@ -21,10 +21,7 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-console.log(process.env);
 const { WEBHOOK_VERIFY_TOKEN, GRAPH_API_TOKEN, PORT } = process.env;
-
-console.log(PORT, WEBHOOK_VERIFY_TOKEN, GRAPH_API_TOKEN);
 
 async function flowise(data) {
   try {
